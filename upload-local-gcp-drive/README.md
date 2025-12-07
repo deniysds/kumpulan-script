@@ -91,3 +91,64 @@ python3 upload-to-gcp.py ./photos my-backup \
 - Periksa koneksi jaringan jika banyak `[FAIL]` muncul.
 - Pastikan `bucket` sudah dibuat dan nama benar (tanpa `gs://`).
 - Gunakan path absolut untuk `source` dan `--log` bila perlu.
+
+---
+
+# Salin dari GCS ke Google Drive (rclone)
+
+Skrip `gcp-to-drive.sh` menyalin objek dari remote GCS ke remote Google Drive menggunakan `rclone`. Skrip ini mendukung parameterisasi concurrency, ukuran chunk Drive, logging, serta opsi dry-run.
+
+## Prasyarat
+- `rclone` terpasang dan dikonfigurasi remotenya.
+  - Instal (macOS): `brew install rclone`
+  - Konfigurasi: `rclone config` lalu buat remote `gcs` (Google Cloud Storage) dan `gdrive` (Google Drive). Pastikan kredensial dan aksesnya benar.
+
+## Cara Pakai
+```bash
+bash gcp-to-drive.sh \
+  --src "gcs:<bucket>/<path>" \
+  --dst "gdrive:<folder>/<path>" \
+  [--transfers N] [--checkers N] \
+  [--chunk M] [--shared] [--ignore-existing] \
+  [--no-progress] [--dry-run] \
+  [--log-file PATH] [--log-level LEVEL]
+```
+
+- `--src`: remote sumber GCS, mis. `gcs:transit_bucket_ysds/itdel/BPM1`.
+- `--dst`: remote tujuan Drive, mis. `gdrive:01_Data Mentah/itdel/bawang_putih/BPM1`.
+- `--transfers`: jumlah transfer paralel (default `16`).
+- `--checkers`: jumlah proses pemeriksa (default `8`).
+- `--chunk`: ukuran chunk Drive, mis. `64M` (default `64M`).
+- `--shared`: sertakan file yang dibagikan ke akun (`--drive-shared-with-me`).
+- `--ignore-existing`: lewati file yang sudah ada di tujuan (default aktif).
+- `--no-progress`: sembunyikan progress.
+- `--dry-run`: simulasi tanpa menyalin.
+- `--log-file`: tulis log rclone ke file.
+- `--log-level`: tingkat log rclone (`INFO`, `ERROR`, `DEBUG`; default `INFO`).
+
+### Contoh
+```bash
+# Menyalin dari GCS ke Drive dengan setting default
+bash gcp-to-drive.sh \
+  --src "gcs:transit_bucket_ysds/itdel/BPM1" \
+  --dst "gdrive:01_Data Mentah/itdel/bawang_putih/BPM1" \
+  --shared --transfers 16 --checkers 8 --chunk 64M
+
+# Dry-run untuk verifikasi
+bash gcp-to-drive.sh \
+  --src "gcs:my-bucket/data" \
+  --dst "gdrive:Backup/data" \
+  --dry-run --log-level INFO
+
+# Dengan log file
+bash gcp-to-drive.sh \
+  --src "gcs:my-bucket/data" \
+  --dst "gdrive:Backup/data" \
+  --log-file /tmp/rclone_copy.log --log-level DEBUG
+```
+
+## Catatan
+- Pastikan remote `gcs` dan `gdrive` telah dikonfigurasi dengan kredensial yang valid.
+- Pada folder Drive yang dibagikan, aktifkan `--shared` agar file muncul.
+- Sesuaikan `--transfers` dan `--checkers` sesuai bandwidth/koneksi.
+- Ukuran `--chunk` lebih besar dapat membantu throughput, namun bergantung pada kondisi jaringan.

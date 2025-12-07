@@ -98,10 +98,26 @@ python3 upload-to-gcp.py ./photos my-backup \
 
 Skrip `gcp-to-drive.sh` menyalin objek dari remote GCS ke remote Google Drive menggunakan `rclone`. Skrip ini mendukung parameterisasi concurrency, ukuran chunk Drive, logging, serta opsi dry-run.
 
-## Prasyarat
-- `rclone` terpasang dan dikonfigurasi remotenya.
-  - Instal (macOS): `brew install rclone`
-  - Konfigurasi: `rclone config` lalu buat remote `gcs` (Google Cloud Storage) dan `gdrive` (Google Drive). Pastikan kredensial dan aksesnya benar.
+## Instalasi Rclone
+- macOS: `brew install rclone`
+- Linux (Debian/Ubuntu): `sudo apt-get install rclone` atau ikuti panduan resmi di https://rclone.org/install/
+- Verifikasi: `rclone version`
+
+## Konfigurasi Rclone
+- Buat remote `gcs` (Google Cloud Storage):
+  - Jalankan `rclone config` → pilih `n` (new remote) → nama: `gcs` → storage: `Google Cloud Storage`.
+  - Gunakan service account: isi `service_account_file` dengan path JSON (`/path/to/key.json`).
+  - Isi `project_number` bila diperlukan, sisanya dapat default.
+  - Alternatif non-interaktif: `rclone config create gcs gcs service_account_file /path/to/key.json`.
+- Buat remote `gdrive` (Google Drive):
+  - Jalankan `rclone config` → pilih `n` (new remote) → nama: `gdrive` → storage: `Google Drive`.
+  - Scope: `drive` (full access) atau `drive.readonly` sesuai kebutuhan.
+  - Auto config: `yes`, login via browser, pilih akun, dan izinkan akses.
+  - Jika memakai Shared Drive, set `team_drive` atau aktifkan saat prompt.
+
+## Verifikasi Konfigurasi
+- Lihat bucket GCS: `rclone lsd gcs:` atau `rclone ls gcs:<bucket>`
+- Lihat folder Drive: `rclone lsd gdrive:`
 
 ## Cara Pakai
 ```bash

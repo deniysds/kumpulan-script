@@ -168,3 +168,50 @@ bash gcp-to-drive.sh \
 - Pada folder Drive yang dibagikan, aktifkan `--shared` agar file muncul.
 - Sesuaikan `--transfers` dan `--checkers` sesuai bandwidth/koneksi.
 - Ukuran `--chunk` lebih besar dapat membantu throughput, namun bergantung pada kondisi jaringan.
+
+---
+
+# Rotasi Service Account untuk Rclone (gcp-to-drive-sa.sh)
+
+Skrip `gcp-to-drive-sa.sh` menyalin data dari GCS ke Google Drive menggunakan `rclone` dengan mekanisme rotasi Service Account (SA). Skrip akan berganti ke file kredensial SA berikutnya ketika mencapai batas transfer atau kuota.
+
+## Kebutuhan
+- `rclone` telah terpasang dan remote `gcs` serta `gdrive_sa` sudah dikonfigurasi.
+  - `gcs`: gunakan service account file JSON sesuai proyek GCS.
+  - `gdrive_sa`: remote Google Drive yang relevan (bisa Shared Drive). Pastikan akun SA memiliki akses ke Drive/Shared Drive.
+- Direktori berisi banyak file JSON service account, mis. `/home/daeng_deni/sa`.
+- Hak akses yang memadai pada bucket GCS sumber dan folder Drive tujuan.
+
+## Konfigurasi yang Perlu Disesuaikan
+- Buka `gcp-to-drive-sa.sh` dan sesuaikan variabel berikut:
+  - `SADIR`: direktori berisi file `*.json` service account.
+  - `SRC`: sumber, contoh `gcs:transit_bucket_ysds/bawang_putih_prima_UGM`.
+  - `DST`: tujuan, contoh `gdrive_sa:01_Data Mentah/ugm/prima/bawang_putih`.
+  - `LIMIT`: batas transfer per SA, mis. `350G` (atur sesuai kebijakan; Anda dapat menaikkan/menurunkan sesuai kebutuhan).
+
+## Cara Penggunaan
+```bash
+bash gcp-to-drive-sa.sh
+```
+
+- Skrip akan mengiterasi semua file JSON di `SADIR`.
+- Pada setiap iterasi, `GOOGLE_APPLICATION_CREDENTIALS` akan diarahkan ke file SA aktif.
+- Ketika batas tercapai atau error kuota terjadi, skrip akan tidur beberapa detik lalu beralih ke SA berikutnya.
+
+## Opsi Rclone yang Digunakan
+- `--transfers=1`, `--checkers=1`: menjaga beban rendah agar tidak cepat kena limit.
+- `--drive-chunk-size=64M`, `--fast-list`, `--drive-shared-with-me`, `--ignore-existing`.
+- `--max-transfer <LIMIT>`, `--drive-stop-on-upload-limit`, `--bwlimit 200M`, `--verbose`, `--progress`.
+
+## Penanganan Exit Code (Rotasi SA)
+- `0`: selesai tanpa error → keluar.
+- `8`: `--max-transfer` tercapai → ganti SA.
+- `9`: upload limit terlampaui → ganti SA.
+- `3` atau `4`: rate limit (403) → ganti SA.
+- `7`: `userRateLimitExceeded (403)` → ganti SA.
+- Lainnya: hentikan dengan pesan “Unhandled error”.
+
+## Tips
+- Tempatkan banyak SA di `SADIR` untuk dataset besar.
+- Pastikan tiap SA diberi akses ke folder Drive tujuan (shared atau Team Drive).
+- Sesuaikan `LIMIT` agar sesuai kebijakan kuota harian Drive per SA.

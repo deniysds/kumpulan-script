@@ -182,26 +182,57 @@ Skrip `gcp-to-drive-sa.sh` menyalin data dari GCS ke Google Drive menggunakan `r
 - Direktori berisi banyak file JSON service account, mis. `/home/daeng_deni/sa`.
 - Hak akses yang memadai pada bucket GCS sumber dan folder Drive tujuan.
 
-## Konfigurasi yang Perlu Disesuaikan
-- Buka `gcp-to-drive-sa.sh` dan sesuaikan variabel berikut:
-  - `SADIR`: direktori berisi file `*.json` service account.
-  - `SRC`: sumber, contoh `gcs:transit_bucket_ysds/bawang_putih_prima_UGM`.
-  - `DST`: tujuan, contoh `gdrive_sa:01_Data Mentah/ugm/prima/bawang_putih`.
-  - `LIMIT`: batas transfer per SA, mis. `350G` (atur sesuai kebijakan; Anda dapat menaikkan/menurunkan sesuai kebutuhan).
+## Konfigurasi & Default
+- Skrip mendukung CLI sehingga Anda tidak perlu mengedit file script.
+- Nilai default:
+  - `--limit 350G`, `--transfers 1`, `--checkers 1`, `--chunk 64M`, `--bwlimit 200M`, `--log-level INFO`, `--sleep-sec 5`.
+- Pastikan remote `gdrive_sa` menunjuk ke Drive/Shared Drive yang diizinkan untuk Service Account.
 
-## Cara Penggunaan
+## Cara Pakai
 ```bash
-bash gcp-to-drive-sa.sh
+bash gcp-to-drive-sa.sh \
+  --sa-dir /path/to/sa \
+  --src "gcs:<bucket>/<path>" \
+  --dst "gdrive_sa:<folder>/<path>" \
+  [--limit SIZE] [--transfers N] [--checkers N] \
+  [--chunk M] [--bwlimit RATE] [--shared] [--ignore-existing] \
+  [--no-progress] [--dry-run] [--log-file PATH] [--log-level LEVEL] \
+  [--sleep-sec N]
 ```
 
-- Skrip akan mengiterasi semua file JSON di `SADIR`.
-- Pada setiap iterasi, `GOOGLE_APPLICATION_CREDENTIALS` akan diarahkan ke file SA aktif.
-- Ketika batas tercapai atau error kuota terjadi, skrip akan tidur beberapa detik lalu beralih ke SA berikutnya.
+- `--sa-dir`: direktori yang berisi file JSON Service Account.
+- `--src`: remote sumber GCS, mis. `gcs:transit_bucket_ysds/bawang_putih_prima_UGM`.
+- `--dst`: remote tujuan Drive, mis. `gdrive_sa:01_Data Mentah/ugm/prima/bawang_putih`.
+- `--limit`: batas transfer per SA (default `350G`).
+- `--transfers`/`--checkers`: paralelisme rclone (default `1/1`).
+- `--chunk`: ukuran chunk Drive (default `64M`).
+- `--bwlimit`: pembatas bandwidth (default `200M`).
+- `--shared`: sertakan file yang dibagikan ke akun (`--drive-shared-with-me`).
+- `--ignore-existing`: lewati file yang sudah ada di tujuan (default aktif).
+- `--no-progress`: sembunyikan progress.
+- `--dry-run`: simulasi tanpa menyalin.
+- `--log-file` dan `--log-level`: logging rclone.
+- `--sleep-sec`: jeda sebelum rotasi ke SA berikutnya.
+
+### Contoh
+```bash
+# Rotasi SA dengan setelan default
+bash gcp-to-drive-sa.sh \
+  --sa-dir /home/daeng_deni/sa \
+  --src "gcs:transit_bucket_ysds/bawang_putih_prima_UGM" \
+  --dst "gdrive_sa:01_Data Mentah/ugm/prima/bawang_putih"
+
+# Dengan limit lebih kecil, log file, dan jeda rotasi 10 detik
+bash gcp-to-drive-sa.sh \
+  --sa-dir /home/daeng_deni/sa \
+  --src "gcs:my-bucket/data" \
+  --dst "gdrive_sa:Backup/data" \
+  --limit 200G --log-file /tmp/rclone_sa.log --log-level INFO --sleep-sec 10
+```
 
 ## Opsi Rclone yang Digunakan
-- `--transfers=1`, `--checkers=1`: menjaga beban rendah agar tidak cepat kena limit.
-- `--drive-chunk-size=64M`, `--fast-list`, `--drive-shared-with-me`, `--ignore-existing`.
-- `--max-transfer <LIMIT>`, `--drive-stop-on-upload-limit`, `--bwlimit 200M`, `--verbose`, `--progress`.
+- `--transfers`, `--checkers`, `--drive-chunk-size`, `--fast-list`, `--drive-shared-with-me`, `--ignore-existing`.
+- `--max-transfer`, `--drive-stop-on-upload-limit`, `--bwlimit`, `--log-level`, `--log-file`, `--progress`/`--no-progress`, `--dry-run`.
 
 ## Penanganan Exit Code (Rotasi SA)
 - `0`: selesai tanpa error → keluar.

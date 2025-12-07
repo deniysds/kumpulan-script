@@ -4,6 +4,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from google.cloud import storage
+from google.api_core.retry import Retry
+import time, math
 
 TZ = ZoneInfo("Asia/Jakarta")
 
@@ -15,29 +17,59 @@ def iter_files(src: Path):
             if p.is_file():
                 yield p
 
-def upload_one(client, bucket_name, local_path: Path, dest_prefix: str, source_root: Path):
+# Tuneables for flaky links
+WRITE_TIMEOUT_SEC = 900          # 15 minutes per request
+CHUNK_SIZE = 8 * 1024 * 1024     # 8 MiB chunks help on unstable networks
+MAX_ATTEMPTS = 6                 # total attempts per file
+BASE_BACKOFF = 2.0               # seconds (exponential)
+
+def upload_one(client, bucket_name, local_path, dest_prefix, source_root):
     bucket = client.bucket(bucket_name)
     rel = local_path.relative_to(source_root) if source_root.is_dir() else local_path.name
     blob_name = f"{dest_prefix}{rel}".replace("\\", "/")
     blob = bucket.blob(blob_name)
+    blob.chunk_size = CHUNK_SIZE  # force resumable, smaller writes
 
-    # Use resumable upload; adjust chunk size if desired (e.g., 8*1024*1024)
-    # blob.chunk_size = 8 * 1024 * 1024
+    retry_policy = Retry(  # retry transient errors incl. timeouts/connection resets
+        initial=1.0, maximum=32.0, multiplier=2.0, deadline=WRITE_TIMEOUT_SEC + 60
+    )
 
-    start = time.perf_counter()
-    blob.upload_from_filename(str(local_path))
-    dur = time.perf_counter() - start
+    start_total = time.perf_counter()
     size_bytes = local_path.stat().st_size
-    mbps = (size_bytes / (1024 * 1024)) / dur if dur > 0 else 0.0
-    ts = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(time.time()))
-    return {
-        "timestamp_local": ts,
-        "source_path": str(local_path),
-        "gcs_uri": f"gs://{bucket_name}/{blob_name}",
-        "size_bytes": size_bytes,
-        "duration_sec": round(dur, 3),
-        "throughput_MBps": round(mbps, 2),
-    }
+
+    last_err = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            start = time.perf_counter()
+            # NOTE: timeout here is per HTTP request (per chunk), not the whole file
+            blob.upload_from_filename(
+                str(local_path),
+                timeout=WRITE_TIMEOUT_SEC,
+                retry=retry_policy
+            )
+            dur = time.perf_counter() - start_total
+            mbps = (size_bytes / (1024*1024)) / dur if dur > 0 else 0.0
+            ts = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime())
+            return {
+                "timestamp_local": ts,
+                "source_path": str(local_path),
+                "gcs_uri": f"gs://{bucket_name}/{blob_name}",
+                "size_bytes": size_bytes,
+                "duration_sec": round(dur, 3),
+                "throughput_MBps": round(mbps, 2),
+            }
+        except Exception as e:
+            last_err = e
+            if attempt == MAX_ATTEMPTS:
+                raise
+            # exponential backoff with jitter
+            sleep_s = BASE_BACKOFF * (2 ** (attempt - 1))
+            sleep_s *= (0.75 + 0.5 * (time.perf_counter() % 1))  # cheap jitter
+            print(f"[RETRY {attempt}/{MAX_ATTEMPTS-1}] {local_path} due to: {e}. Sleeping {sleep_s:.1f}s")
+            time.sleep(sleep_s)
+
+    # Should not reach here
+    raise last_err
 
 def main():
     ap = argparse.ArgumentParser(description="Upload to GCS with per-file time report")
